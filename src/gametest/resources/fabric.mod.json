@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "companion-test",
+  "version": "1.0.0",
+  "name": "Companion tests",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": [
+      "dev.minepal.CompanionGameTests",
+      "dev.minepal.CompanionSafetyTests",
+      "dev.minepal.CompanionStorageTests",
+      "dev.minepal.CompanionResourceTests"
+    ],
+    "fabric-client-gametest": [
+      "dev.minepal.CompanionClientGameTest"
+    ]
+  },
+  "depends": {
+    "companion": "*"
+  }
+}

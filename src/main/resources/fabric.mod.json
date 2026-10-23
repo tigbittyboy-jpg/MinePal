@@ -1,0 +1,6 @@
+{
+ "schemaVersion": 1, "id": "companion", "version": "${version}",
+ "name": "Companion", "description": "An offline survival companion.",
+ "environment": "*", "entrypoints": {"main": ["dev.minepal.CompanionMod"], "client": ["dev.minepal.client.CompanionClient"]},
+ "depends": {"fabricloader": ">=0.20.1", "minecraft": "26.3", "java": ">=25", "fabric-api": "*"}
+}
