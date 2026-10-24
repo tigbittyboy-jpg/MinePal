@@ -36,7 +36,7 @@ public final class SharedStorage {
   if(block==null)return "Only an unlocked, already-opened chest or barrel can be shared.";
   String token=((AttachmentTarget)block).getAttachedOrCreate(IDENTITY,()->UUID.randomUUID().toString());
   block.setChanged();position=pos.immutable();identity=token;dimension=companion.level().dimension().identifier().toString();
-  return "Storage designated. Enable shared storage before transferring. A double chest grants only the selected half.";
+  return "Storage designated at "+pos.toShortString()+". Enable access to transfer. Only the selected chest half is shared.";
  }
  public void revoke() { position=null;identity="";dimension=""; }
  public boolean permitted(BlockPos pos) {

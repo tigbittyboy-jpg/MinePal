@@ -18,7 +18,7 @@ import net.minecraft.world.level.storage.ValueOutput;
 
 /** Server-owned companion. Vanilla UUID and custom name are persisted by Entity. */
 public class CompanionEntity extends PathfinderMob implements net.minecraft.world.entity.npc.InventoryCarrier {
- public enum Mode { STAY, FOLLOW, HOME, GATHER }
+ public enum Mode { STAY, FOLLOW, HOME, GATHER, WORK }
  private final CompanionInventory inventory = new CompanionInventory(this);
  private final CompanionSettings settings = new CompanionSettings();
  private final SharedStorage sharedStorage = new SharedStorage(this);
@@ -26,6 +26,8 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  private long teleportAfter;
  private BlockPos combatAnchor;
  private ResourceTaskGoal resourceTask;
+ private WorkstationGoal workTask;
+ private long nextMenuAction,nextMenuRefresh;
  private UUID owner;
  private BlockPos home;
  private Mode mode = Mode.STAY;
@@ -64,12 +66,19 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   goalSelector.addGoal(3,new TravelGoal());
   resourceTask=new ResourceTaskGoal(this);
   goalSelector.addGoal(4,resourceTask);
+  workTask=new WorkstationGoal(this);goalSelector.addGoal(4,workTask);
   goalSelector.addGoal(5,new OpenDoorGoal(this,true));
   goalSelector.addGoal(6,new LookAtPlayerGoal(this,Player.class,6));
   goalSelector.addGoal(7,new RandomLookAroundGoal(this));
   targetSelector.addGoal(1,new CompanionCombatGoal(this));
  }
  @Override public CompanionInventory getInventory() { return inventory; }
+ public WorkstationGoal workTask() { return workTask; }
+ public boolean allowMenuAction(boolean refresh) {
+  long time=level().getGameTime();
+  if(refresh){if(time<nextMenuRefresh)return false;nextMenuRefresh=time+20;return true;}
+  if(time<nextMenuAction)return false;nextMenuAction=time+2;return true;
+ }
  public ResourceTaskGoal resourceTask() { return resourceTask; }
  void taskActivity(String text) { activity=text; }
  public CompanionSettings settings() { return settings; }
@@ -128,15 +137,15 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  }
  public boolean ownedBy(Player player) { return owner != null && owner.equals(player.getUUID()); }
  public void claim(Player player) { owner=player.getUUID(); setCustomName(Component.literal("Companion")); setCustomNameVisible(true); }
- public void command(Mode next) { if(next!=Mode.GATHER)resourceTask.cancel(); mode=next; setTarget(null); getNavigation().stop(); activity=next==Mode.STAY?"Waiting":next==Mode.FOLLOW?"Following":next==Mode.GATHER?"Gathering resources":"Returning home"; }
+ public void command(Mode next) { if(next!=Mode.GATHER)resourceTask.cancel(); if(next!=Mode.WORK)workTask.cancel(); mode=next; setTarget(null); getNavigation().stop(); activity=next==Mode.STAY?"Waiting":next==Mode.FOLLOW?"Following":next==Mode.GATHER?"Gathering resources":next==Mode.WORK?"Preparing crafting work":"Returning home"; }
  public void setHome(BlockPos pos) { home=pos.immutable(); }
  public BlockPos home() { return home; }
  public String status() { return (retreating()?"Retreating/recovering":getTarget()!=null?"Fighting":activity) + "; food " + inventory.hunger() + "/20" + (home==null?"; no home assigned":"; home "+home.toShortString()); }
  @Override protected InteractionResult mobInteract(Player player, InteractionHand hand) {
   if (ownedBy(player) && hand==InteractionHand.MAIN_HAND) {
    if (level() instanceof ServerLevel) {
-    command(player.isShiftKeyDown()?Mode.STAY:mode==Mode.FOLLOW?Mode.STAY:Mode.FOLLOW);
-    player.sendOverlayMessage(Component.literal(status()));
+    if(player.isShiftKeyDown()) { command(Mode.STAY);player.sendOverlayMessage(Component.literal(status())); }
+    else if(player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)CompanionMenuProtocol.open(serverPlayer,this,"What would you like to do?");
    }
    return InteractionResult.SUCCESS;
   }
@@ -147,6 +156,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   writeInventoryToTag(out);
   settings.save(out.child("CompanionSettings"));
   resourceTask.save(out.child("CompanionResourceTask"));
+  workTask.save(out.child("CompanionWorkTask"));
   sharedStorage.save(out.child("CompanionStorage"));
   out.putLong("CompanionTeleportAfter",teleportAfter);
   out.putInt("CompanionHunger",inventory.hunger());
@@ -159,14 +169,16 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   readInventoryFromTag(in);
   settings.load(in.childOrEmpty("CompanionSettings"));
   resourceTask.load(in.childOrEmpty("CompanionResourceTask"));
+  workTask.load(in.childOrEmpty("CompanionWorkTask"));
   sharedStorage.load(in.childOrEmpty("CompanionStorage"));
   teleportAfter=in.getLongOr("CompanionTeleportAfter",0);
   inventory.setHunger(in.getIntOr("CompanionHunger",20));
   try { owner=UUID.fromString(in.getStringOr("CompanionOwner","")); } catch(IllegalArgumentException ignored) { owner=null; }
   try { mode=Mode.valueOf(in.getStringOr("CompanionMode","STAY")); } catch(IllegalArgumentException ignored) { mode=Mode.STAY; }
   if(mode==Mode.GATHER && !resourceTask.active())mode=Mode.STAY;
+  if(mode==Mode.WORK && !workTask.active())mode=Mode.STAY;
   home=in.getLong("CompanionHome").map(BlockPos::of).orElse(null);
-  activity=mode==Mode.STAY?"Waiting":mode==Mode.FOLLOW?"Following":mode==Mode.GATHER?"Gathering resources":"Returning home";
+  activity=mode==Mode.STAY?"Waiting":mode==Mode.FOLLOW?"Following":mode==Mode.GATHER?"Gathering resources":mode==Mode.WORK?"Preparing crafting work":"Returning home";
  }
  private final class TravelGoal extends Goal {
   private int repath, failures;
@@ -194,7 +206,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
     if(!tryEmergencyTeleport(true))activity="Path blocked; retrying";
     repath=100; failures=0; return; }
    boolean found=getNavigation().moveTo(p.x,p.y,p.z,1.0);
-   activity=found?(mode==Mode.FOLLOW?"Following":mode==Mode.GATHER?"Gathering resources":"Returning home"):"No reachable path; retrying";
+   activity=found?(mode==Mode.FOLLOW?"Following":mode==Mode.GATHER?"Gathering resources":mode==Mode.WORK?"Preparing crafting work":"Returning home"):"No reachable path; retrying";
   }
  }
 }

@@ -57,11 +57,15 @@ public final class CompanionInventory extends SimpleContainer {
    if(slot==null || !companion.isEquippableInSlot(stack,slot))continue;
    var equipped=companion.getItemBySlot(slot);
    if(!equipped.isEmpty()) {
-    // Replace only a near-broken item with a healthier copy of the same item type.
+    // Upgrade common tools, or replace a near-broken item with a healthier copy.
     // Preserve the old equipment in the freed storage slot, including its enchantments.
-    if(stack.getCount()!=1 || !equipped.isDamageableItem() || !ItemStack.isSameItem(stack,equipped)
-     || equipped.getMaxDamage()-equipped.getDamageValue()>Math.max(1,equipped.getMaxDamage()/10)
-     || stack.getDamageValue()>=equipped.getDamageValue())continue;
+    boolean upgrade=BasicCrafting.toolCategory(stack)>=0 && BasicCrafting.toolCategory(stack)==BasicCrafting.toolCategory(equipped)
+     && BasicCrafting.toolRank(stack)>BasicCrafting.toolRank(equipped)
+     && stack.getMaxDamage()-stack.getDamageValue()>Math.max(1,stack.getMaxDamage()/10);
+    boolean repair=equipped.isDamageableItem() && ItemStack.isSameItem(stack,equipped)
+     && equipped.getMaxDamage()-equipped.getDamageValue()<=Math.max(1,equipped.getMaxDamage()/10)
+     && stack.getDamageValue()<equipped.getDamageValue();
+    if(stack.getCount()!=1 || (!upgrade && !repair))continue;
     setItem(i,equipped);companion.setItemSlot(slot,stack);companion.setGuaranteedDrop(slot);
    } else {
     if(stack.isDamageableItem() && stack.nextDamageWillBreak())continue;

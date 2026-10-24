@@ -20,6 +20,7 @@ public class CompanionMod implements ModInitializer {
   EntityType.Builder.of(CompanionEntity::new,MobCategory.CREATURE).sized(0.6F,1.8F).eyeHeight(1.62F)
    .clientTrackingRange(10).build(ResourceKey.create(Registries.ENTITY_TYPE,ID)));
  @Override public void onInitialize() {
+  CompanionMenuProtocol.register();
   FabricDefaultAttributeRegistry.register(TYPE,CompanionEntity.attributes());
   CommandRegistrationCallback.EVENT.register((dispatcher,registry,environment)-> {
    var root=Commands.literal("companion");
@@ -32,7 +33,7 @@ public class CompanionMod implements ModInitializer {
     if(!s.getLevel().addFreshEntity(c))return 0;
     s.sendSuccess(()->Component.literal("Companion spawned. Right-click to follow; sneak-right-click to stay."),false);return 1;
    }));
-   for(var action:new String[]{"follow","stay","return","home","status","inventory","equip","unequip","craft","settings","share","unshare","stop","recall","gather","mine"}) {
+   for(var action:new String[]{"follow","stay","return","home","status","inventory","equip","unequip","craft","settings","share","unshare","stop","recall","gather","mine","menu","prepare","mine_nearby"}) {
     root.then(Commands.literal(action).executes(ctx->control(ctx.getSource(),action,null)));
    }
    root.then(Commands.literal("name").then(Commands.argument("name",StringArgumentType.greedyString())
@@ -60,6 +61,9 @@ public class CompanionMod implements ModInitializer {
   var c=list.stream().min(java.util.Comparator.comparingDouble(player::distanceToSqr)).orElse(null);
   if(c==null){s.sendFailure(Component.literal("No owned companion loaded within 64 blocks."));return 0;}
   switch(action) {
+   case "menu" -> { CompanionMenuProtocol.open(player,c,"What would you like to do?");return 1; }
+   case "prepare" -> { String result=c.workTask().prepare(true);s.sendSuccess(()->Component.literal(result),false);return 1; }
+   case "mine_nearby" -> { String result=c.resourceTask().beginNearestMine();s.sendSuccess(()->Component.literal(result),false);return 1; }
    case "gathering" -> c.settings().gathering("on".equals(name));
    case "mining" -> c.settings().mining("on".equals(name));
    case "gather" -> { String result=c.resourceTask().begin(null);s.sendSuccess(()->Component.literal(result),false);return 1; }

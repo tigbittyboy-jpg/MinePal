@@ -18,6 +18,11 @@ public final class CompanionSettings {
  private boolean useGiftedEquipment=true;
  private boolean sharedStorage=false;
  private boolean gathering=true, mining=true;
+ private boolean basicCrafting=true, clearLeaves=true;
+ public boolean basicCrafting() { return basicCrafting; }
+ public boolean clearLeaves() { return clearLeaves; }
+ public void basicCrafting(boolean v) { basicCrafting=v; }
+ public void clearLeaves(boolean v) { clearLeaves=v; }
  public boolean gathering() { return gathering; }
  public boolean mining() { return mining; }
  public void gathering(boolean value) { gathering=value; }
@@ -33,12 +38,14 @@ public final class CompanionSettings {
  public void useGiftedEquipment(boolean value) { useGiftedEquipment=value; }
  public void sharedStorage(boolean value) { sharedStorage=value; }
  public void save(ValueOutput out) {
+  out.putBoolean("BasicCrafting",basicCrafting);out.putBoolean("ClearLeaves",clearLeaves);
   out.putBoolean("Gathering",gathering);out.putBoolean("Mining",mining);
   out.putString("Combat",combat.name());out.putString("FollowDistance",distance.name());
   out.putBoolean("EmergencyTeleport",emergencyTeleport);out.putBoolean("UseGiftedEquipment",useGiftedEquipment);
   out.putBoolean("SharedStorage",sharedStorage);
  }
  public void load(ValueInput in) {
+  basicCrafting=in.getBooleanOr("BasicCrafting",true);clearLeaves=in.getBooleanOr("ClearLeaves",true);
   gathering=in.getBooleanOr("Gathering",true);mining=in.getBooleanOr("Mining",true);
   try { combat=Combat.valueOf(in.getStringOr("Combat","DEFENSIVE")); } catch(IllegalArgumentException ignored) { combat=Combat.DEFENSIVE; }
   try { distance=FollowDistance.valueOf(in.getStringOr("FollowDistance","NORMAL")); } catch(IllegalArgumentException ignored) { distance=FollowDistance.NORMAL; }

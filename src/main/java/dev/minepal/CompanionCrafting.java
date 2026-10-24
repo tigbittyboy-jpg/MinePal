@@ -14,11 +14,14 @@ public final class CompanionCrafting {
  private CompanionCrafting() { }
  public static String craft(CompanionEntity companion) {
   if(!(companion.level() instanceof ServerLevel server))return "Crafting requires a server.";
-  boolean table=false;
-  for(BlockPos pos:BlockPos.betweenClosed(companion.blockPosition().offset(-3,-1,-3),companion.blockPosition().offset(3,1,3))) {
-   if(server.hasChunkAt(pos) && server.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) { table=true;break; }
-  }
-  if(!table)return "I need a crafting table within three blocks.";
+  if(!hasTableNearby(companion,3))return companion.workTask().grid();
+  return craftGrid(companion);
+ }
+ public static boolean hasTableNearby(CompanionEntity c,int radius) {
+  return WorkstationGoal.nearest(c,radius,false)!=null;
+ }
+ public static String craftGrid(CompanionEntity companion) {
+  if(!(companion.level() instanceof ServerLevel server) || !hasTableNearby(companion,3))return "I need a reachable crafting table.";
   var inventory=companion.getInventory();var grid=new ArrayList<ItemStack>();
   for(int i=0;i<9;i++)grid.add(inventory.getItem(i).copy());
   var positioned=CraftingInput.ofPositioned(3,3,grid);var input=positioned.input();

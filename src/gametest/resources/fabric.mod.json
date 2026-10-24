@@ -9,7 +9,9 @@
       "dev.minepal.CompanionGameTests",
       "dev.minepal.CompanionSafetyTests",
       "dev.minepal.CompanionStorageTests",
-      "dev.minepal.CompanionResourceTests"
+      "dev.minepal.CompanionResourceTests",
+      "dev.minepal.CompanionWorkTests",
+      "dev.minepal.CompanionSearchTests"
     ],
     "fabric-client-gametest": [
       "dev.minepal.CompanionClientGameTest"
