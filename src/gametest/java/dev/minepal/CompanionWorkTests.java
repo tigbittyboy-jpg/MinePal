@@ -44,7 +44,7 @@ public class CompanionWorkTests {
    h.assertTrue(c.getInventory().countItem(Items.WOODEN_PICKAXE)==0,"Cannot craft 3x3 tools without a real table");
   });
  }
- @GameTest public void insufficient_capacity_preserves_recipe_inputs(GameTestHelper h) {
+ @GameTest(padding=8) public void insufficient_capacity_preserves_recipe_inputs(GameTestHelper h) {
   var c=prepare(h);for(int i=0;i<27;i++)c.getInventory().setItem(i,new ItemStack(Items.COBBLESTONE,64));
   c.getInventory().setItem(0,new ItemStack(Items.OAK_LOG,2));
   h.assertTrue(BasicCrafting.step(c,false)==BasicCrafting.Step.FULL,"Full inventory must reject conversion atomically");
@@ -59,7 +59,7 @@ public class CompanionWorkTests {
    h.assertTrue(c.getInventory().countItem(Items.IRON_INGOT)==0 && c.getInventory().countItem(Items.WOODEN_PICKAXE)==0,"Do not waste resources on an inferior duplicate");
   });
  }
- @GameTest public void work_job_and_new_settings_survive_serialization(GameTestHelper h) {
+ @GameTest(padding=8) public void work_job_and_new_settings_survive_serialization(GameTestHelper h) {
   var c=prepare(h);c.getInventory().setItem(0,new ItemStack(Items.OAK_LOG,4));c.workTask().prepare(true);
   c.settings().clearLeaves(false);c.settings().basicCrafting(false);
   var out=TagValueOutput.createWithContext(ProblemReporter.DISCARDING,h.getLevel().registryAccess());c.saveWithoutId(out);
@@ -76,7 +76,7 @@ public class CompanionWorkTests {
    h.assertTrue(!c.workTask().active() && c.getInventory().countItem(Items.IRON_INGOT)==4,"Follow must interrupt work without spending resources");h.succeed();
   });
  }
- @GameTest public void menu_rejects_other_players_and_invalid_slots(GameTestHelper h) {
+ @GameTest(padding=8) public void menu_rejects_other_players_and_invalid_slots(GameTestHelper h) {
   var c=prepare(h);var other=h.makeMockServerPlayerInLevel();other.snapTo(c.position());
   CompanionMenuProtocol.apply(other,c,"gather","");CompanionMenuProtocol.apply(other,c,"name","Stolen");
   h.assertTrue(!c.resourceTask().active() && !c.getName().getString().equals("Stolen"),"Menu actions must validate owner on the server");
@@ -84,7 +84,7 @@ public class CompanionWorkTests {
   String result=CompanionMenuProtocol.apply(owner,c,"withdraw","-1");
   h.assertTrue(result.contains("1 to 27"),"Invalid menu slot must not reach inventory mutation");h.succeed();
  }
- @GameTest public void earned_tool_upgrade_preserves_previous_equipment(GameTestHelper h) {
+ @GameTest(padding=8) public void earned_tool_upgrade_preserves_previous_equipment(GameTestHelper h) {
   var c=prepare(h);c.settings().useGiftedEquipment(true);
   var old=new ItemStack(Items.WOODEN_PICKAXE);c.setItemSlot(EquipmentSlot.MAINHAND,old);
   c.getInventory().setItem(0,new ItemStack(Items.STONE_PICKAXE));c.getInventory().equipEmptySlots();

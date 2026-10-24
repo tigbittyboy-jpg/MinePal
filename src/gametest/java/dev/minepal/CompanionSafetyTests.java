@@ -12,18 +12,17 @@ public class CompanionSafetyTests {
  private static void floor(GameTestHelper h) {
   for(int x=0;x<8;x++)for(int z=0;z<8;z++)h.setBlock(x,1,z,Blocks.STONE);
  }
- @GameTest public void emergency_follow_catches_up_safely(GameTestHelper h) {
+ @GameTest(padding=8) public void emergency_follow_catches_up_safely(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(1,2,1));
   var owner=h.makeMockServerPlayerInLevel();owner.snapTo(h.absoluteVec(new net.minecraft.world.phys.Vec3(4.5,2,4.5)));
   c.claim(owner);c.command(CompanionEntity.Mode.FOLLOW);
   c.snapTo(owner.getX()+40,owner.getY(),owner.getZ());
-  h.assertTrue(c.tryEmergencyTeleport(false),"Separated follower must find a safe loaded landing");
-  h.assertTrue(c.distanceToSqr(owner)<=32,"Landing must be nearby");
-  h.assertTrue(SafeTravel.safeLanding(c,h.getLevel(),c.blockPosition()),"Landing must satisfy collision/hazard checks");
-  var landing=c.position();c.snapTo(owner.getX()+40,owner.getY(),owner.getZ());
-  h.assertFalse(c.tryEmergencyTeleport(false),"Teleport must respect its cooldown");c.snapTo(landing);h.succeed();
+  var before=c.position();c.settings().emergencyTeleport(true);
+  h.assertFalse(c.tryEmergencyTeleport(false),"0.4 forbids navigation teleportation even for a separated follower");
+  h.assertTrue(c.position().equals(before),"No fallback may change position instantly");
+  c.snapTo(owner.position());h.succeed();
  }
- @GameTest public void teleport_setting_and_stay_are_respected(GameTestHelper h) {
+ @GameTest(padding=8) public void teleport_setting_and_stay_are_respected(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(1,2,1));var owner=h.makeMockServerPlayerInLevel();
   owner.snapTo(h.absoluteVec(new net.minecraft.world.phys.Vec3(4.5,2,4.5)));c.claim(owner);
   c.snapTo(owner.getX()+40,owner.getY(),owner.getZ());var initial=c.position();
@@ -32,7 +31,7 @@ public class CompanionSafetyTests {
   h.assertFalse(c.tryEmergencyTeleport(true),"Disabled emergency teleport must not run");
   h.assertTrue(initial.equals(c.position()),"Rejected teleport must not move the actor");c.snapTo(owner.position());h.succeed();
  }
- @GameTest public void hazards_and_obstructions_reject_landing(GameTestHelper h) {
+ @GameTest(padding=8) public void hazards_and_obstructions_reject_landing(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(1,2,1));var pos=h.absolutePos(new BlockPos(4,2,4));
   h.assertTrue(SafeTravel.safeLanding(c,h.getLevel(),pos),"Plain stone landing should be valid");
   h.setBlock(4,1,4,Blocks.MAGMA_BLOCK);
@@ -42,7 +41,7 @@ public class CompanionSafetyTests {
   h.setBlock(4,2,4,Blocks.AIR);h.setBlock(5,2,4,Blocks.LAVA);
   h.assertFalse(SafeTravel.safeLanding(c,h.getLevel(),pos),"Must reject adjacent lava");h.succeed();
  }
- @GameTest public void settings_roundtrip_and_invalid_optional_data(GameTestHelper h) {
+ @GameTest(padding=8) public void settings_roundtrip_and_invalid_optional_data(GameTestHelper h) {
   var c=h.spawn(CompanionMod.TYPE,new BlockPos(1,2,1));c.settings().combat(CompanionSettings.Combat.PASSIVE);
   c.settings().distance(CompanionSettings.FollowDistance.RELAXED);c.settings().emergencyTeleport(false);
   c.settings().useGiftedEquipment(false);c.settings().sharedStorage(true);
@@ -54,10 +53,10 @@ public class CompanionSafetyTests {
    && copy.settings().distance()==CompanionSettings.FollowDistance.RELAXED,"All settings must persist independently");
   var bad=TagValueOutput.createWithoutContext(ProblemReporter.DISCARDING);bad.putString("Combat","BROKEN");bad.putString("FollowDistance","-100");
   var defaults=new CompanionSettings();defaults.load(TagValueInput.create(ProblemReporter.DISCARDING,h.getLevel().registryAccess(),bad.buildResult()));
-  h.assertTrue(defaults.combat()==CompanionSettings.Combat.DEFENSIVE && defaults.distance()==CompanionSettings.FollowDistance.NORMAL
+  h.assertTrue(defaults.combat()==CompanionSettings.Combat.AGGRESSIVE && defaults.distance()==CompanionSettings.FollowDistance.NORMAL
    && !defaults.sharedStorage(),"Corrupt optional settings must have safe defaults");h.succeed();
  }
- @GameTest(maxTicks=180) public void owner_defense_deals_real_damage(GameTestHelper h) {
+ @GameTest(maxTicks=180,padding=8) public void owner_defense_deals_real_damage(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(3,2,3));var owner=h.makeMockServerPlayerInLevel();
   owner.snapTo(h.absoluteVec(new net.minecraft.world.phys.Vec3(2.5,2,3.5)));c.claim(owner);
   var zombie=h.spawn(EntityTypes.ZOMBIE,new BlockPos(4,2,3));zombie.setNoAi(true);
@@ -65,24 +64,28 @@ public class CompanionSafetyTests {
   owner.setLastHurtByMob(zombie);
   h.succeedWhen(()->h.assertTrue(zombie.getLastHurtByMob()==c && zombie.getHealth()<zombie.getMaxHealth(),"Defense must result in a real vanilla melee hit"));
  }
- @GameTest(maxTicks=80) public void passive_mode_never_retaliates(GameTestHelper h) {
+ @GameTest(maxTicks=120,padding=8) public void passive_mode_never_initiates_but_can_defend_itself(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(3,2,3));var zombie=h.spawn(EntityTypes.ZOMBIE,new BlockPos(4,2,3));zombie.setNoAi(true);
-  c.settings().combat(CompanionSettings.Combat.PASSIVE);c.setLastHurtByMob(zombie);
-  h.runAfterDelay(40,()->{h.assertTrue(c.getTarget()==null && !c.canAttack(zombie),"Passive must suppress retaliation");h.succeed();});
+  c.settings().combat(CompanionSettings.Combat.PASSIVE);
+  h.runAfterDelay(20,()->{
+   h.assertTrue(c.getTarget()==null && !c.canAttack(zombie),"Passive must not initiate combat");
+   c.setLastHurtByMob(zombie);
+   h.succeedWhen(()->h.assertTrue(zombie.getLastHurtByMob()==c,"Passive self-defense must use a real melee hit after provocation"));
+  });
  }
- @GameTest(maxTicks=80) public void critical_health_interrupts_combat(GameTestHelper h) {
+ @GameTest(maxTicks=80,padding=8) public void critical_health_interrupts_combat(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(3,2,3));var zombie=h.spawn(EntityTypes.ZOMBIE,new BlockPos(5,2,3));zombie.setNoAi(true);
   c.setTarget(zombie);c.setHealth(5);
   h.runAfterDelay(20,()->{
    h.assertTrue(c.retreating() && c.getTarget()==null && !c.canAttack(zombie),"Critical health must interrupt attack goals");h.succeed();
   });
  }
- @GameTest(maxTicks=100) public void aggressive_mode_targets_hostiles(GameTestHelper h) {
+ @GameTest(maxTicks=100,padding=8) public void aggressive_mode_targets_hostiles(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(2,2,2));var zombie=h.spawn(EntityTypes.ZOMBIE,new BlockPos(5,2,2));zombie.setNoAi(true);
   c.settings().combat(CompanionSettings.Combat.AGGRESSIVE);
   h.succeedWhen(()->h.assertTrue(c.getTarget()==zombie,"Aggressive mode must actually select a hostile target"));
  }
- @GameTest public void registered_commands_control_real_state(GameTestHelper h) {
+ @GameTest(padding=8) public void registered_commands_control_real_state(GameTestHelper h) {
   floor(h);var c=h.spawn(CompanionMod.TYPE,new BlockPos(2,2,2));var owner=h.makeMockServerPlayerInLevel();
   owner.snapTo(c.position());c.claim(owner);var dispatcher=h.getLevel().getServer().getCommands().getDispatcher();
   try {

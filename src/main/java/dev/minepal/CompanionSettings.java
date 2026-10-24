@@ -12,13 +12,15 @@ public final class CompanionSettings {
   FollowDistance(int blocks) { this.blocks=blocks; }
   public int blocks() { return blocks; }
  }
- private Combat combat=Combat.DEFENSIVE;
+ private Combat combat=Combat.AGGRESSIVE;
  private FollowDistance distance=FollowDistance.NORMAL;
- private boolean emergencyTeleport=true;
+ private boolean emergencyTeleport=false;
  private boolean useGiftedEquipment=true;
- private boolean sharedStorage=false;
+ private boolean sharedStorage=false,pvpAssist=false;
  private boolean gathering=true, mining=true;
  private boolean basicCrafting=true, clearLeaves=true;
+ public boolean pvpAssist() { return pvpAssist; }
+ public void pvpAssist(boolean value) { pvpAssist=value; }
  public boolean basicCrafting() { return basicCrafting; }
  public boolean clearLeaves() { return clearLeaves; }
  public void basicCrafting(boolean v) { basicCrafting=v; }
@@ -29,15 +31,16 @@ public final class CompanionSettings {
  public void mining(boolean value) { mining=value; }
  public Combat combat() { return combat; }
  public FollowDistance distance() { return distance; }
- public boolean emergencyTeleport() { return emergencyTeleport; }
+ public boolean emergencyTeleport() { return false; }
  public boolean useGiftedEquipment() { return useGiftedEquipment; }
  public boolean sharedStorage() { return sharedStorage; }
  public void combat(Combat value) { combat=java.util.Objects.requireNonNull(value); }
  public void distance(FollowDistance value) { distance=java.util.Objects.requireNonNull(value); }
- public void emergencyTeleport(boolean value) { emergencyTeleport=value; }
+ public void emergencyTeleport(boolean value) { emergencyTeleport=false; }
  public void useGiftedEquipment(boolean value) { useGiftedEquipment=value; }
  public void sharedStorage(boolean value) { sharedStorage=value; }
  public void save(ValueOutput out) {
+  out.putBoolean("PvpAssist",pvpAssist);
   out.putBoolean("BasicCrafting",basicCrafting);out.putBoolean("ClearLeaves",clearLeaves);
   out.putBoolean("Gathering",gathering);out.putBoolean("Mining",mining);
   out.putString("Combat",combat.name());out.putString("FollowDistance",distance.name());
@@ -45,11 +48,12 @@ public final class CompanionSettings {
   out.putBoolean("SharedStorage",sharedStorage);
  }
  public void load(ValueInput in) {
+  pvpAssist=in.getBooleanOr("PvpAssist",false);
   basicCrafting=in.getBooleanOr("BasicCrafting",true);clearLeaves=in.getBooleanOr("ClearLeaves",true);
   gathering=in.getBooleanOr("Gathering",true);mining=in.getBooleanOr("Mining",true);
-  try { combat=Combat.valueOf(in.getStringOr("Combat","DEFENSIVE")); } catch(IllegalArgumentException ignored) { combat=Combat.DEFENSIVE; }
+  try { combat=Combat.valueOf(in.getStringOr("Combat","AGGRESSIVE")); } catch(IllegalArgumentException ignored) { combat=Combat.AGGRESSIVE; }
   try { distance=FollowDistance.valueOf(in.getStringOr("FollowDistance","NORMAL")); } catch(IllegalArgumentException ignored) { distance=FollowDistance.NORMAL; }
-  emergencyTeleport=in.getBooleanOr("EmergencyTeleport",true);
+  emergencyTeleport=false; // Legacy save key retained, but navigation teleportation is no longer permitted.
   useGiftedEquipment=in.getBooleanOr("UseGiftedEquipment",true);
   sharedStorage=in.getBooleanOr("SharedStorage",false);
  }

@@ -47,6 +47,38 @@ public final class CompanionInventory extends SimpleContainer {
   for(int i=0;i<getContainerSize();i++)setItem(i,planned.getItem(i));
   return true;
  }
+ public void equipBestWeapon() {
+  if(!companion.settings().useGiftedEquipment())return;
+  int selected=-1;double best=weaponScore(companion.getMainHandItem());
+  for(int i=0;i<getContainerSize();i++) {
+   var s=getItem(i);if(!(s.is(ItemTags.SWORDS)||s.is(ItemTags.AXES)) || s.nextDamageWillBreak())continue;
+   double score=weaponScore(s);if(score>best){best=score;selected=i;}
+  }
+  if(selected>=0)swapHand(selected);
+ }
+ private double weaponScore(ItemStack stack) {
+  double[] damage={1};stack.forEachModifier(EquipmentSlot.MAINHAND,(attribute,modifier)->{
+   if(attribute.equals(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE))damage[0]+=modifier.amount();
+  });return damage[0];
+ }
+ private void swapHand(int slot) {
+  var old=companion.getMainHandItem();var next=removeItem(slot,1);
+  companion.setItemSlot(EquipmentSlot.MAINHAND,next);setItem(slot,old);companion.setGuaranteedDrop(EquipmentSlot.MAINHAND);
+ }
+ public boolean hasToolFor(net.minecraft.world.level.block.state.BlockState state) {
+  if(!state.requiresCorrectToolForDrops() || companion.getMainHandItem().isCorrectToolForDrops(state))return true;
+  return companion.settings().useGiftedEquipment() && hasAnyMatching(s->!s.isEmpty() && !s.nextDamageWillBreak() && s.isCorrectToolForDrops(state));
+ }
+ public void equipForBlock(net.minecraft.world.level.block.state.BlockState state) {
+  if(!companion.settings().useGiftedEquipment())return;
+  int selected=-1;float best=companion.getMainHandItem().getDestroySpeed(state);
+  boolean correct=!state.requiresCorrectToolForDrops() || companion.getMainHandItem().isCorrectToolForDrops(state);
+  for(int i=0;i<getContainerSize();i++) {
+   var s=getItem(i);if(s.isEmpty() || s.nextDamageWillBreak() || (state.requiresCorrectToolForDrops() && !s.isCorrectToolForDrops(state)))continue;
+   float speed=s.getDestroySpeed(state);if(!correct || speed>best){correct=true;best=speed;selected=i;}
+  }
+  if(selected>=0)swapHand(selected);
+ }
  public void equipEmptySlots() {
   if(!companion.settings().useGiftedEquipment())return;
   for(int i=0;i<getContainerSize();i++) {

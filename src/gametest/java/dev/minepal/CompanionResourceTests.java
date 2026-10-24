@@ -60,7 +60,7 @@ public class CompanionResourceTests {
    h.assertTrue(c.getInventory().countItem(Items.RAW_IRON)==0,"Protected ore cannot produce resources");DENIED.remove(pos);h.succeed();
   });
  }
- @GameTest public void resource_assignment_persists_without_awarding_loot(GameTestHelper h) {
+ @GameTest(padding=8) public void resource_assignment_persists_without_awarding_loot(GameTestHelper h) {
   var c=prepare(h);h.setBlock(4,2,2,Blocks.IRON_ORE);c.setItemSlot(EquipmentSlot.MAINHAND,new ItemStack(Items.IRON_PICKAXE));
   c.resourceTask().begin(h.absolutePos(new BlockPos(4,2,2)));
   var out=TagValueOutput.createWithContext(ProblemReporter.DISCARDING,h.getLevel().registryAccess());c.saveWithoutId(out);

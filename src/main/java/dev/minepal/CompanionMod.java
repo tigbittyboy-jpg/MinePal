@@ -20,7 +20,7 @@ public class CompanionMod implements ModInitializer {
   EntityType.Builder.of(CompanionEntity::new,MobCategory.CREATURE).sized(0.6F,1.8F).eyeHeight(1.62F)
    .clientTrackingRange(10).build(ResourceKey.create(Registries.ENTITY_TYPE,ID)));
  @Override public void onInitialize() {
-  CompanionMenuProtocol.register();
+  CompanionMenuProtocol.register();OwnerAttackHooks.register();
   FabricDefaultAttributeRegistry.register(TYPE,CompanionEntity.attributes());
   CommandRegistrationCallback.EVENT.register((dispatcher,registry,environment)-> {
    var root=Commands.literal("companion");
@@ -57,16 +57,19 @@ public class CompanionMod implements ModInitializer {
  }
  private static int control(CommandSourceStack s,String action,String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
   var player=s.getPlayerOrException();
-  var list=s.getLevel().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(64),c->c.ownedBy(player));
+  var list=new java.util.ArrayList<CompanionEntity>();
+  if(action.equals("menu") || action.equals("recall") || action.equals("stop")) {
+   for(var entity:s.getLevel().getAllEntities())if(entity instanceof CompanionEntity companion && companion.ownedBy(player))list.add(companion);
+  } else list.addAll(s.getLevel().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(64),c->c.ownedBy(player)));
   var c=list.stream().min(java.util.Comparator.comparingDouble(player::distanceToSqr)).orElse(null);
   if(c==null){s.sendFailure(Component.literal("No owned companion loaded within 64 blocks."));return 0;}
   switch(action) {
    case "menu" -> { CompanionMenuProtocol.open(player,c,"What would you like to do?");return 1; }
    case "prepare" -> { String result=c.workTask().prepare(true);s.sendSuccess(()->Component.literal(result),false);return 1; }
-   case "mine_nearby" -> { String result=c.resourceTask().beginNearestMine();s.sendSuccess(()->Component.literal(result),false);return 1; }
+   case "mine_nearby" -> { String result=c.resourceTask().assign(ResourceTaskGoal.Objective.ORE,64);s.sendSuccess(()->Component.literal(result),false);return 1; }
    case "gathering" -> c.settings().gathering("on".equals(name));
    case "mining" -> c.settings().mining("on".equals(name));
-   case "gather" -> { String result=c.resourceTask().begin(null);s.sendSuccess(()->Component.literal(result),false);return 1; }
+   case "gather" -> { String result=c.resourceTask().assign(ResourceTaskGoal.Objective.WOOD,64);s.sendSuccess(()->Component.literal(result),false);return 1; }
    case "mine" -> {
     var hit=player.pick(6,0,false);
     if(!(hit instanceof BlockHitResult block) || hit.getType()!=net.minecraft.world.phys.HitResult.Type.BLOCK) {

@@ -11,7 +11,10 @@
       "dev.minepal.CompanionStorageTests",
       "dev.minepal.CompanionResourceTests",
       "dev.minepal.CompanionWorkTests",
-      "dev.minepal.CompanionSearchTests"
+      "dev.minepal.CompanionSearchTests",
+      "dev.minepal.CompanionIntelligenceTests",
+      "dev.minepal.CompanionExplorationTests",
+      "dev.minepal.CompanionTaskReliabilityTests"
     ],
     "fabric-client-gametest": [
       "dev.minepal.CompanionClientGameTest"

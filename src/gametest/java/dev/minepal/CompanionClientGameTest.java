@@ -38,23 +38,49 @@ public class CompanionClientGameTest implements FabricClientGameTest {
     c.interact(player,net.minecraft.world.InteractionHand.MAIN_HAND,net.minecraft.world.phys.Vec3.ZERO);
    });
    context.waitForScreen(dev.minepal.client.CompanionScreen.class);
+   context.runOnClient(client->{
+    var buttons=client.gui.screen().children().stream().filter(w->w instanceof net.minecraft.client.gui.components.Button)
+     .map(w->(net.minecraft.client.gui.components.Button)w).toList();
+    var labels=buttons.stream().map(b->b.getMessage().getString()).collect(java.util.stream.Collectors.toSet());
+    if(!labels.equals(java.util.Set.of("Follow Me","Stay Here","Gather Resources","Craft Equipment","Inventory","More Options","Done")))throw new AssertionError("Primary menu must expose exactly the six requested actions");
+    for(int i=0;i<buttons.size();i++)for(int j=i+1;j<buttons.size();j++){
+     var x=buttons.get(i);var y=buttons.get(j);
+     if(x.getX()<y.getX()+y.getWidth() && x.getX()+x.getWidth()>y.getX() && x.getY()<y.getY()+y.getHeight() && x.getY()+x.getHeight()>y.getY())throw new AssertionError("UI buttons overlap");
+    }
+   });
    System.out.println("COMPANION_MENU_ACTIONS_SCREENSHOT="+context.takeScreenshot("companion-menu-actions"));
-   context.clickScreenButton("Follow me");
+   context.clickScreenButton("Follow Me");
    world.getServer().waitFor(server->world.getConnection().getServerLevel().getEntitiesOfClass(CompanionEntity.class,
     world.getConnection().getServerPlayer().getBoundingBox().inflate(12)).getFirst().mode()==CompanionEntity.Mode.FOLLOW);
-   context.waitTicks(5);context.clickScreenButton("Stay here");
+   context.waitTicks(5);context.clickScreenButton("Stay Here");
    world.getServer().waitFor(server->world.getConnection().getServerLevel().getEntitiesOfClass(CompanionEntity.class,
     world.getConnection().getServerPlayer().getBoundingBox().inflate(12)).getFirst().mode()==CompanionEntity.Mode.STAY);
-   context.waitTicks(5);context.clickScreenButton(">");
-   context.clickScreenButton("Combat: Defensive");context.waitTicks(5);
-   context.clickScreenButton("Emergency teleport: On");context.waitTicks(5);
+   context.waitTicks(5);context.clickScreenButton("Gather Resources");
+   context.runOnClient(client->{
+    var edit=(net.minecraft.client.gui.components.EditBox)client.gui.screen().children().stream().filter(w->w instanceof net.minecraft.client.gui.components.EditBox).findFirst().orElseThrow();edit.setValue("8");
+   });
+   context.clickScreenButton("Gather Wood");context.waitTicks(5);
+   world.getServer().runOnServer(server->{
+    var player=world.getConnection().getServerPlayer();var c=player.level().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(20)).getFirst();
+    if(!c.resourceTask().active() || c.taskLedger().requested()!=8)throw new AssertionError("UI quantity must create the actual persistent resource assignment");
+   });
+   System.out.println("COMPANION_MENU_RESOURCES_SCREENSHOT="+context.takeScreenshot("companion-menu-resources"));
+   context.clickScreenButton("Cancel Task");context.waitTicks(5);
+   world.getServer().runOnServer(server->{
+    var player=world.getConnection().getServerPlayer();var c=player.level().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(20)).getFirst();
+    if(c.resourceTask().active() || c.taskLedger().phase()!=TaskLedger.Phase.CANCELED)throw new AssertionError("UI cancellation must stop the real task");
+   });
+   context.clickScreenButton("Back");context.clickScreenButton("More Options");
+
+   context.clickScreenButton("Combat & Settings");
+   context.clickScreenButton("Combat: Aggressive");context.waitTicks(5);
    world.getServer().runOnServer(server->{
     var player=world.getConnection().getServerPlayer();
     var c=player.level().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(12)).getFirst();
-    if(c.settings().combat()!=CompanionSettings.Combat.AGGRESSIVE || c.settings().emergencyTeleport())throw new AssertionError("UI setting buttons did not mutate actual server state");
+    if(c.settings().combat()!=CompanionSettings.Combat.PASSIVE || c.settings().emergencyTeleport())throw new AssertionError("UI setting buttons did not mutate actual server state");
    });
    System.out.println("COMPANION_MENU_SETTINGS_SCREENSHOT="+context.takeScreenshot("companion-menu-settings"));
-   context.clickScreenButton(">");
+   context.clickScreenButton("Back");context.clickScreenButton("Equipment & Name");
    context.runOnClient(client->{
     var edit=(net.minecraft.client.gui.components.EditBox)client.gui.screen().children().stream()
      .filter(child->child instanceof net.minecraft.client.gui.components.EditBox).findFirst().orElseThrow();edit.setValue("Rowan");
@@ -64,7 +90,7 @@ public class CompanionClientGameTest implements FabricClientGameTest {
     var player=world.getConnection().getServerPlayer();
     if(!player.level().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(12)).getFirst().getName().getString().equals("Rowan"))throw new AssertionError("UI rename must persist on the server");
    });
-   context.clickScreenButton(">");
+   context.clickScreenButton("Back");context.clickScreenButton("Storage");
    context.clickScreenButton("Designate nearest chest");context.waitTicks(5);
    context.clickScreenButton("Shared access: Off");context.waitTicks(5);
    context.clickScreenButton("Withdraw slot");context.waitTicks(5);
@@ -81,7 +107,7 @@ public class CompanionClientGameTest implements FabricClientGameTest {
    System.out.println("COMPANION_MENU_STORAGE_SCREENSHOT="+context.takeScreenshot("companion-menu-storage"));
    context.clickScreenButton("Done");context.waitTicks(10);
    context.runOnClient(client->{if(client.gui.screen() instanceof dev.minepal.client.CompanionScreen)throw new AssertionError("A delayed refresh must not reopen a closed menu");});
-   System.out.println("COMPANION_MENU_TEST_PASSED: right-click screen, follow/stay actions, authoritative settings, rename, real shared withdrawal/deposit, no reopen after closing");
+   System.out.println("COMPANION_MENU_TEST_PASSED: six-action layout without overlap, real quantities/cancellation, follow/stay, authoritative settings, rename, real shared transfers, no reopen after closing");
    world.getServer().runOnServer(server->{
     var player=world.getConnection().getServerPlayer();
     var companions=player.level().getEntitiesOfClass(CompanionEntity.class,player.getBoundingBox().inflate(12));

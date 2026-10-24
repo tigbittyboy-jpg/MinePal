@@ -1,152 +1,59 @@
-# Companion — Minecraft Java 26.3
+# MinePal / Companion — Minecraft Java 26.3
 
-**Current build: 0.3.0.** An offline, deterministic Fabric companion with real
-inventory, gathering, crafting, and a dedicated interaction UI.
+**Current build: 0.4.0**, an incremental survival and intelligence update.
 
-[Download 0.3.0](downloads/companion-0.3.0/companion-0.3.0.jar?raw=true) ·
-[Release notes](downloads/companion-0.3.0/README.md) ·
-[Testing](docs/TESTING_0.3.0.md) ·
-[Original specification](docs/PROJECT_SPECIFICATION.md)
+[Download JAR](downloads/companion-0.4.0/companion-0.4.0.jar?raw=true) · [Release notes](downloads/companion-0.4.0/README.md) · [Test report](docs/TESTING_0.4.0.md) · [Original specification](docs/PROJECT_SPECIFICATION.md) · [0.4.0 request](docs/REQUEST_0.4.0.md)
 
 ## Install and activate
 
-Use **Minecraft Java 26.3**, **Java 25**, **Fabric Loader 0.20.1**, and
-**Fabric API 0.165.0+26.3**. Back up the world before upgrading. Move the old
-Companion JAR into a backup folder outside `mods/`; only one version should be
-active. Add the new Companion JAR and Fabric API to `mods/`. Dedicated servers
-and all clients need the same 0.3.0 mod.
+Use **Minecraft Java 26.3**, **Java 25**, **Fabric Loader 0.20.1**, and **Fabric API 0.165.0+26.3**. Install the same Companion version on server and clients. Back up your world; move the previous Companion JAR outside `mods/` and install the new JAR alongside Fabric API. Only one Companion version should be active.
 
-On macOS, the normal launcher folder is:
+On macOS, open Finder → Go → Go to Folder and enter:
 
 ```text
 ~/Library/Application Support/minecraft/mods
 ```
 
-Launch the Fabric profile. Use `/companion spawn` once to create your companion.
-Existing companions keep their entity ID and old save fields. **Right-click him
-to open the menu.** Sneak-right-click remains a quick Stay shortcut. `/companion
-menu` is an optional alternative. Ordinary actions no longer require commands.
+Launch the Fabric profile. Use `/companion spawn` once, then **right-click your companion**. Existing companions retain their names, inventories, settings, and home. Sneak-right-click remains quick Stay. `/companion menu` is optional.
 
-## The menu
+**Existing companions preserve their combat mode.** To enable assistance when you attack an animal, choose **More Options → Combat & Settings → Combat: Aggressive**. Newly created companions default to Aggressive. Passive defends himself; Defensive defends himself and his owner; Aggressive also assists with the owner's selected living target. PvP assistance is separately configurable and off by default. Owner, companions, and tame pets are excluded.
 
-Use `<` and `>` at the bottom to switch between four pages. Escape/Done closes
-the menu. It stays live while the world runs and shows actual server activity.
+## Menu and tasks
 
-- **Actions:** Follow, Stay, Return Home, Stop Task, Gather Wood, Mine Nearby,
-  Craft Basic Tools, Craft Inventory Recipe, Trade/Inventory, and Set Nearest Bed.
-- **Settings:** combat mode, follow distance, emergency teleport, automatic gifted
-  gear use, gathering, mining, basic crafting after resource work, leaf clearing,
-  and explicitly shared storage access.
-- **Equipment & name:** rename him, equip gear, recover equipment, or trade.
-  Recovering equipment disables automatic re-equipping so the action stays useful.
-- **Storage:** designate the nearest chest/barrel, enable access, choose a source
-  slot (1–27), then deposit or withdraw that whole stack. Revocation is one click.
-  Unknown containers remain private, replacement containers lose permission, and
-  locked/unopened-loot containers are not accessed. A double chest grants only
-  the selected half. Transfers require him within four blocks of that container.
+The main menu has six choices: **Follow Me**, **Stay Here**, **Gather Resources**, **Craft Equipment**, **Inventory**, and **More Options**. It displays actual health, hunger, combat mode, objective, collected/requested quantity, task state, and explanation. Resources offers wood, stone, and exposed ore with a quantity; **0 means open-ended**. More Options contains cancellation, home, storage, equipment/name, workstation crafting, and settings. Inventory exchange still requires proximity; task management can reach your loaded, owned companion in the same dimension.
 
-Buttons send bounded, validated actions to the server. Ownership, dimension,
-distance, values, and inventory conditions are checked there; the screen cannot
-create items or grant access to someone else's companion. The menu closes when
-the companion dies, disappears, or goes beyond its 16-block interaction range.
-This is the implemented settings subset, not a pretend GUI for unfinished systems.
+Resource exploration scans loaded terrain incrementally and walks toward new search cells instead of abandoning an assignment at an arbitrary radius. It remembers searched cells and discovered resources/tables. Unloaded terrain does not get force-loaded. Tasks retain objectives, collected quantities, exploration progress, and working state across serialization and combat interruptions. Blocked work reports why and retains the assignment.
 
-## Workstations and logical crafting
+Natural-tree harvesting tracks connected trunks and branches and collects real drops. It finishes the selected accessible tree even if this exceeds the requested quantity. Identifiable remaining logs prevent a completed status. Soil, canopy, wood-family, and bounded connectivity checks reject simple log buildings; Minecraft cannot reliably prove whether an old tree-like structure was player-built. Avoid assigning work beside valuable builds.
 
-**Craft Inventory Recipe** uses his first nine storage slots as a row-major 3×3
-recipe grid, as in previous builds. If a usable table is not beside him, he searches
-for a reachable table within **16 blocks**, walks there, then crafts. If the recipe
-stacks change while he travels, he cancels without crafting a different recipe.
+Mine Stone can cut inspected staircase segments through dirt into stone. It avoids digging directly below itself, fluid-adjacent cuts, containers, falling blocks, and unsupported landings. Mine Exposed Ore searches visible loaded resources, not hidden ore through walls. Breaking takes time and respects tools, durability, loot rules, protection callbacks, and inventory capacity. Progress counts accepted task-resource drops, not dirt or invented items.
 
-**Craft Basic Tools** needs no manually arranged grid. He uses his owned resources
-to make planks, sticks, a crafting table when needed, and a pickaxe, axe, and shovel.
-Each step is an actual recipe-manager transaction. The button explicitly permits
-placing **one owned bench** on a safe, empty, supported spot if no reachable table
-exists. Placement spends that inventory item, uses vanilla placement rules, and
-checks owner permissions, spawn protection, mobGriefing, and block-use callbacks.
-No free table is spawned and no player block is replaced.
+Craft Equipment uses owned resources and real recipes to make planks, sticks, a bench, and common tools, upgrading tiers when materials permit. It may place one owned bench safely. Automatic post-gather preparation does not place blocks. Craft inventory recipe retains the first-nine-slots recipe grid. Workstation tasks remember tables, explore for them, and can walk to distant known benches. Shared storage retains explicit container permission and real stack transfers.
 
-With **Basic crafting: On** (default), completing a resource task starts
-preparing useful supplies automatically when he owns relevant crafting materials. This automatic job **does not place blocks**:
-it uses an existing reachable table, or retains its newly crafted bench as an item
-and explains what is missing. Press Craft Basic Tools to authorize placement.
+Combat uses server-side owner attack detection, actual melee, owned weapon selection, cooldowns and durability. Threat scoring considers health, enemy type/count/distance, recent damage, armor, weapon, and terrain. Retreat uses reachable walking routes and hysteresis. **Navigation teleports are disabled**, including the old emergency setting, as required by the 0.4.0 request. Work resumes after combat when safe.
 
-The planner avoids duplicate tool tiers. It can use earned cobblestone, iron ingots,
-and diamonds for better tools, preserves older gear when equipping an upgrade,
-and recognizes existing netherite tools. It stops with an explanation when wood,
-materials, inventory space, a recipe, or a reachable workstation is missing.
-It does not smelt raw ore into ingots or invent missing ingredients.
+## Scope and remaining work
 
-For example, with eight oak logs, no table, and authorized placement, the tested
-wooden kit spends exactly **four logs** on one placed bench, one wooden pickaxe,
-one wooden axe, and one wooden shovel. It retains the other four logs, one plank,
-and two sticks. Inventory capacity is checked before each recipe commits.
+This is an incremental release, **not completion of the entire 0.4.0 request**. Exploration, excavation, workstations, survival, and complete-tree milestones remain partial:
 
-## Mining, gathering, and obstruction clearing
+- No temporary scaffolding: unreachable high crowns remain blocked, never falsely completed. Giant/complex trees need more work.
+- Exploration depends on normally loaded chunks, uses bounded memory, and cannot guarantee a route through arbitrary terrain. No permanent chunk loader or full expedition return planner.
+- Natural-tree recognition is heuristic; no universal protection guarantee for tree-like player builds.
+- Staircase excavation is conservative; no advanced cave engineering, buried-ore planning, smelting, or full independent progression.
+- Placed crafting benches are remembered but not automatically recovered.
+- Retreat has no shelter construction or ranged tactics. Food remains legitimate existing inventory consumption.
+- Death remains permanent; respawning, keepInventory and death recovery are unfinished. Long survival sessions, multiplayer/PvP edge cases and full disk upgrade/reload need manual testing.
+- Daily routines, expeditions/signs, personality, activity history and full dialogue remain later milestones.
 
-**Mine Nearby** searches loaded terrain for exposed, reachable stone/deepslate/ore
-within **16 blocks**, favoring ores for which he owns a correct tool. He walks to
-it, breaks it over time, collects actual drops, and can continue for up to eight
-blocks within the task area/time limit. It does not scan hidden ore through solid
-walls, dig shafts, or force chunks to load. Automatic selection avoids blocks below
-his feet; the legacy pointed-block mining command remains available.
+Previous artifacts remain intact: [0.1.0](downloads/companion-0.1.0), [0.2.0](downloads/companion-0.2.0), [0.3.0](downloads/companion-0.3.0). Previous instructions are archived in [README 0.3.0](docs/README_0.3.0.md); the original specification is unchanged.
 
-**Gather Wood** authorizes up to 16 reachable logs within eight blocks of the
-assignment position, for at most one minute. Minecraft does not reliably identify
-player-placed logs: do not grant this task beside a wooden build you want preserved.
+## Build and verification
 
-With **Clear leaves: On** (default), an assigned resource task can remove up to
-**12 obstructing leaf blocks** to reach its resource. Breaking has real time, loot,
-tool wear, and permission/veto checks. Containers, supporting blocks under him,
-fluid/falling-block hazards, and arbitrary stone/player structures are not cleared.
-Turn the setting off to preserve leaves. It is not an unrestricted tunneling AI.
-
-Resource jobs pause for combat/retreat and cancel on Follow/Stay/Stop/Recall.
-Tasks, settings, identity, home, inventory, and equipment serialize across saves.
-Unloaded actors pause normally; missing drops are never regenerated. Item pickup
-now paths to the actual drop block instead of stopping at an adjacent path node.
-
-## Existing features retained
-
-Following with safe emergency catch-up, defensive/passive/aggressive combat,
-owner defense, pursuit limits, low-health retreat, weapon-aware attack intervals,
-food consumption, personal item exchange, recipe-backed crafting, home assignment,
-shared-container capabilities, and all previous commands remain available.
-Commands are now optional: see [the retained command reference](docs/README_0.2.0.md).
-Additional commands are `/companion menu`, `/companion prepare`, and
-`/companion mine_nearby`.
-
-Previous releases are preserved: [0.1.0](downloads/companion-0.1.0) and
-[0.2.0](downloads/companion-0.2.0). Their JARs are unchanged. Earlier documentation
-and test reports remain under `docs/`.
-
-## Development and milestone status
-
-Verified toolchain: Minecraft 26.3, Java 25.0.5.0.2+1-LTS-2, Fabric Loader 0.20.1,
-Fabric API 0.165.0+26.3, Loom 1.19.3, Gradle 9.8.2. Mojang's unobfuscated class
-names are used, without Yarn. No gameplay AI model/API/server is required.
+Verified toolchain: Java 25.0.5.0.2, Minecraft 26.3 unobfuscated Mojang names, Fabric Loader 0.20.1, Fabric API 0.165.0+26.3, Loom 1.19.3 and Gradle 9.8.2. No gameplay AI service is required.
 
 ```sh
-cd /workspace/MinePal
-./scripts/dev.sh --no-daemon build   # compiles and runs required server GameTests
-./scripts/headless-client.sh        # real menu/input/network/inventory test
+./scripts/dev.sh --no-daemon build
+./scripts/headless-client.sh
 ```
 
-Use `scripts/bootstrap.sh` to prepare missing local tooling, and
-`scripts/install-headless.sh` for optional local Xvfb/Mesa graphical tests.
-On a normal Java 25 workstation, `./gradlew build` and `./gradlew runClient` work
-with a graphical display. Checksums and TLS verification stay enabled. Use the
-existing checkout; cloud tasks are isolated and do not need another Git worktree.
-Previous downloads and source backups are retained, and no Gradle clean is used.
-
-This advances milestone 4's actual resource/crafting/equipment progression and
-adds functional portions of milestones 6–7 through interaction/settings screens.
-It does not claim every milestone or all 25 specification scenarios are complete.
-
-**Still unfinished:** smelting and complete independent resource planning,
-claimed-bed validation, daily routines/sleep, expeditions/signs, personality and
-activity-history systems, full scripted dialogue, and remaining settings.
-**Death remains permanent:** respawning, keepInventory, and death recovery are
-not implemented. Continue using backed-up test worlds. Multiplayer edge cases,
-complex cave routes, long survival play, and complete disk upgrade/reload testing
-still need manual validation.
+The build compiles common/client code and runs server GameTests. The second command runs the real integrated client/menu test using local Xvfb and Vulkan software rendering. On a Java 25 graphical workstation, use `./gradlew build` and `./gradlew runClient`. Existing bootstrap/headless setup scripts remain available. See the release test report for coverage and limits.

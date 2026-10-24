@@ -14,19 +14,22 @@ import net.minecraft.core.BlockPos;
 /** Small, validated server-authoritative menu messages, also used in dedicated multiplayer. */
 public final class CompanionMenuProtocol {
  private CompanionMenuProtocol() { }
- public record Action(int entityId,String action,String value) implements CustomPacketPayload {
+ public record Action(int entityId,String action,String value,String companionUuid) implements CustomPacketPayload {
   public static final Type<Action> TYPE=new Type<>(Identifier.fromNamespaceAndPath("companion","menu_action"));
   public static final StreamCodec<RegistryFriendlyByteBuf,Action> CODEC=StreamCodec.of(
-   (b,p)->{b.writeVarInt(p.entityId);b.writeUtf(p.action,40);b.writeUtf(p.value,64);},
-   b->new Action(b.readVarInt(),b.readUtf(40),b.readUtf(64)));
-  @Override public Type<Action> type() { return TYPE; }
+   (b,p)->{b.writeVarInt(p.entityId);b.writeUtf(p.action,40);b.writeUtf(p.value,64);b.writeUtf(p.companionUuid,36);},
+   b->new Action(b.readVarInt(),b.readUtf(40),b.readUtf(64),b.readUtf(36)));
+  @Override public Type<Action> type(){return TYPE;}
  }
- public record State(int entityId,String name,String status,String response,int flags,int combat,int distance,boolean initial) implements CustomPacketPayload {
+ public record State(int entityId,String name,String status,String response,int flags,int combat,int distance,boolean initial,
+  String companionUuid,boolean available,float health,float maxHealth,int hunger,String objective,int requested,int collected,String phase,String detail) implements CustomPacketPayload {
   public static final Type<State> TYPE=new Type<>(Identifier.fromNamespaceAndPath("companion","menu_state"));
   public static final StreamCodec<RegistryFriendlyByteBuf,State> CODEC=StreamCodec.of(
-   (b,p)->{b.writeVarInt(p.entityId);b.writeUtf(p.name,128);b.writeUtf(p.status,512);b.writeUtf(p.response,512);b.writeVarInt(p.flags);b.writeVarInt(p.combat);b.writeVarInt(p.distance);b.writeBoolean(p.initial);},
-   b->new State(b.readVarInt(),b.readUtf(128),b.readUtf(512),b.readUtf(512),b.readVarInt(),b.readVarInt(),b.readVarInt(),b.readBoolean()));
-  @Override public Type<State> type() { return TYPE; }
+   (b,p)->{b.writeVarInt(p.entityId);b.writeUtf(p.name,128);b.writeUtf(p.status,512);b.writeUtf(p.response,512);b.writeVarInt(p.flags);b.writeVarInt(p.combat);b.writeVarInt(p.distance);b.writeBoolean(p.initial);
+    b.writeUtf(p.companionUuid,36);b.writeBoolean(p.available);b.writeFloat(p.health);b.writeFloat(p.maxHealth);b.writeVarInt(p.hunger);b.writeUtf(p.objective,128);b.writeVarInt(p.requested);b.writeVarInt(p.collected);b.writeUtf(p.phase,40);b.writeUtf(p.detail,512);},
+   b->new State(b.readVarInt(),b.readUtf(128),b.readUtf(512),b.readUtf(512),b.readVarInt(),b.readVarInt(),b.readVarInt(),b.readBoolean(),
+    b.readUtf(36),b.readBoolean(),b.readFloat(),b.readFloat(),b.readVarInt(),b.readUtf(128),b.readVarInt(),b.readVarInt(),b.readUtf(40),b.readUtf(512)));
+  @Override public Type<State> type(){return TYPE;}
  }
  public static void register() {
   PayloadTypeRegistry.serverboundPlay().register(Action.TYPE,Action.CODEC);
@@ -34,14 +37,20 @@ public final class CompanionMenuProtocol {
   ServerPlayNetworking.registerGlobalReceiver(Action.TYPE,(packet,context)->context.server().execute(()->handle(context.player(),packet)));
  }
  public static boolean permitted(ServerPlayer player,CompanionEntity c) {
-  return c.isAlive() && c.ownedBy(player) && c.level()==player.level() && player.distanceToSqr(c)<=16*16;
+  return c.isAlive() && c.ownedBy(player) && c.level()==player.level();
  }
  public static void open(ServerPlayer player,CompanionEntity c,String response) { sendState(player,c,response,true); }
  private static void sendState(ServerPlayer player,CompanionEntity c,String response,boolean initial) {
   if(!permitted(player,c) || !ServerPlayNetworking.canSend(player,State.TYPE))return;
   var s=c.settings();int flags=(s.emergencyTeleport()?1:0)|(s.useGiftedEquipment()?2:0)|(s.sharedStorage()?4:0)
-   |(s.gathering()?8:0)|(s.mining()?16:0)|(s.basicCrafting()?32:0)|(s.clearLeaves()?64:0);
-  ServerPlayNetworking.send(player,new State(c.getId(),c.getName().getString(),c.status(),response,flags,s.combat().ordinal(),s.distance().ordinal(),initial));
+   |(s.gathering()?8:0)|(s.mining()?16:0)|(s.basicCrafting()?32:0)|(s.clearLeaves()?64:0)|(s.pvpAssist()?128:0);
+  String objective=c.taskLedger().objective(),phase=c.taskLedger().phase().name(),detail=c.taskLedger().detail();
+  int requested=c.taskLedger().requested(),collected=c.taskLedger().collected();
+  if(c.mode()==CompanionEntity.Mode.FOLLOW){objective="Follow owner";requested=0;collected=0;if(!c.retreating() && c.getTarget()==null){phase="TRAVELING";detail=c.status();}}
+  if(c.mode()==CompanionEntity.Mode.HOME){objective="Return home";requested=1;collected=c.home()!=null && c.distanceToSqr(Vec3.atCenterOf(c.home()))<=4?1:0;if(!c.retreating() && c.getTarget()==null){phase=collected==1?"COMPLETED":"RETURNING";detail=c.status();}}
+  if(c.retreating())detail="Retreating/recovering; task retained";else if(c.getTarget()!=null)detail="Fighting; assigned work is paused";
+  ServerPlayNetworking.send(player,new State(c.getId(),c.getName().getString(),c.status(),response,flags,s.combat().ordinal(),s.distance().ordinal(),initial,
+   c.getUUID().toString(),true,c.getHealth(),c.getMaxHealth(),c.getInventory().hunger(),objective,requested,collected,phase,detail));
  }
  public static String apply(ServerPlayer player,CompanionEntity c,String action,String value) {
   if(!permitted(player,c))return "This companion is not yours or is too far away.";
@@ -52,9 +61,10 @@ public final class CompanionMenuProtocol {
    case "home":
     if(c.home()==null)return "Assign a bed first.";
     c.command(CompanionEntity.Mode.HOME);return "Heading home.";
-   case "inventory": c.openInventory(player);return "";
-   case "gather": return c.resourceTask().begin(null);
-   case "mine": return c.resourceTask().beginNearestMine();
+   case "inventory": if(player.distanceToSqr(c)>64)return "Come within eight blocks to exchange items.";c.openInventory(player);return "";
+   case "gather", "mine", "mine_stone":
+    int quantity;try{quantity=value.isEmpty()?64:Integer.parseInt(value);}catch(NumberFormatException invalid){return "Use a quantity from 0 to 4096.";}
+    return c.resourceTask().assign(action.equals("gather")?ResourceTaskGoal.Objective.WOOD:action.equals("mine_stone")?ResourceTaskGoal.Objective.STONE:ResourceTaskGoal.Objective.ORE,quantity);
    case "craft_grid": return CompanionCrafting.craft(c);
    case "prepare": return c.workTask().prepare(true);
    case "equip": c.getInventory().equipEmptySlots();return "Checked my equipment.";
@@ -74,7 +84,8 @@ public final class CompanionMenuProtocol {
     c.setHome(nearest);return "Assigned the nearest bed as home.";
    case "combat": c.settings().combat(CompanionSettings.Combat.values()[(c.settings().combat().ordinal()+1)%3]);c.setTarget(null);break;
    case "distance": c.settings().distance(CompanionSettings.FollowDistance.values()[(c.settings().distance().ordinal()+1)%3]);break;
-   case "teleport": c.settings().emergencyTeleport(!c.settings().emergencyTeleport());break;
+   case "teleport": return "Navigation teleports are disabled in 0.4.0.";
+   case "pvp": c.settings().pvpAssist(!c.settings().pvpAssist());break;
    case "gifted": c.settings().useGiftedEquipment(!c.settings().useGiftedEquipment());break;
    case "shared": c.settings().sharedStorage(!c.settings().sharedStorage());break;
    case "gathering": c.settings().gathering(!c.settings().gathering());break;
@@ -99,10 +110,14 @@ public final class CompanionMenuProtocol {
   return "Setting saved.";
  }
  private static void handle(ServerPlayer player,Action packet) {
-  if(!(player.level().getEntity(packet.entityId) instanceof CompanionEntity c) || !permitted(player,c))return;
-  if(!c.allowMenuAction(packet.action.equals("refresh")))return;
+  java.util.UUID id;try{id=java.util.UUID.fromString(packet.companionUuid);}catch(IllegalArgumentException invalid){return;}
+  var actor=player.level().getEntityInAnyDimension(id);
+  if(!(actor instanceof CompanionEntity c) || c.level()!=player.level()) {
+   if(ServerPlayNetworking.canSend(player,State.TYPE))ServerPlayNetworking.send(player,new State(packet.entityId,"Unavailable","Actor not loaded","",0,0,0,false,packet.companionUuid,false,0,0,0,"Unavailable",0,0,"BLOCKED","This actor is not loaded in this dimension. No chunks were forced."));
+   return;
+  }
+  if(!permitted(player,c) || !c.allowMenuAction(packet.action.equals("refresh")))return;
   String response=apply(player,c,packet.action,packet.value);
-  // Inventory uses vanilla container synchronization; don't replace it with another screen.
-  if(!packet.action.equals("inventory"))sendState(player,c,response,false);
+  if(!packet.action.equals("inventory") || !response.isEmpty())sendState(player,c,response,false);
  }
 }

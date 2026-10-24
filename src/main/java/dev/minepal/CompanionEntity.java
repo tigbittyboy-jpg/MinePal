@@ -23,12 +23,17 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  private final CompanionSettings settings = new CompanionSettings();
  private final SharedStorage sharedStorage = new SharedStorage(this);
  private boolean retreating;
+ private long retreatUntil;
+ private float recentDamage;
+ private final TaskLedger taskLedger=new TaskLedger();
+ private final SpatialMemory spatialMemory=new SpatialMemory();
  private long teleportAfter;
  private BlockPos combatAnchor;
  private ResourceTaskGoal resourceTask;
  private WorkstationGoal workTask;
  private long nextMenuAction,nextMenuRefresh;
- private UUID owner;
+ private UUID owner,ownerAttackTarget;
+ private long ownerAttackUntil;
  private BlockPos home;
  private Mode mode = Mode.STAY;
  private String activity = "Waiting";
@@ -49,15 +54,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  }
  @Override protected void registerGoals() {
   goalSelector.addGoal(0,new FloatGoal(this));
-  goalSelector.addGoal(1,new AvoidEntityGoal<LivingEntity>(this,LivingEntity.class,10,1.2,1.4,
-   candidate->candidate instanceof net.minecraft.world.entity.monster.Enemy) {
-    @Override public boolean canUse() {
-     return (retreating() || settings().combat()==CompanionSettings.Combat.PASSIVE) && super.canUse();
-    }
-    @Override public boolean canContinueToUse() {
-     return (retreating() || settings().combat()==CompanionSettings.Combat.PASSIVE) && super.canContinueToUse();
-    }
-  });
+  goalSelector.addGoal(1,new RetreatGoal(this));
   goalSelector.addGoal(2,new MeleeAttackGoal(this,1.1,false) {
    @Override protected int getAttackInterval() {
     return Math.max(20,(int)Math.ceil(20/Math.max(0.1,getAttributeValue(Attributes.ATTACK_SPEED))));
@@ -73,6 +70,9 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   targetSelector.addGoal(1,new CompanionCombatGoal(this));
  }
  @Override public CompanionInventory getInventory() { return inventory; }
+ public TaskLedger taskLedger() { return taskLedger; }
+ public SpatialMemory spatialMemory() { return spatialMemory; }
+ public float recentDamage() { return recentDamage; }
  public WorkstationGoal workTask() { return workTask; }
  public boolean allowMenuAction(boolean refresh) {
   long time=level().getGameTime();
@@ -87,10 +87,35 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  public Player ownerPlayer() {
   return owner!=null && level() instanceof ServerLevel server?server.getPlayerByUUID(owner):null;
  }
+ public void registerOwnerAttack(LivingEntity target){
+  if(CombatSafety.valid(this,target)){ownerAttackTarget=target.getUUID();ownerAttackUntil=level().getGameTime()+200;}
+ }
+ public LivingEntity ownerAttackTarget(){
+  if(ownerAttackTarget!=null && level() instanceof ServerLevel server && (server.getGameTime()<=ownerAttackUntil || (getTarget()!=null && getTarget().getUUID().equals(ownerAttackTarget)))) {
+   var entity=server.getEntityInAnyDimension(ownerAttackTarget);if(entity instanceof LivingEntity living && living.level()==level())return living;
+  }
+  return null;
+ }
+ public double combatLeashSquared(LivingEntity target){return CombatSafety.ownerSelected(this,target)||CombatSafety.ownerThreat(this,target)?32*32:16*16;}
  public boolean retreating() { return retreating || getHealth()<=6; }
  @Override public boolean canAttack(LivingEntity target) {
-  return target instanceof net.minecraft.world.entity.monster.Enemy && settings.combat()!=CompanionSettings.Combat.PASSIVE
-   && !retreating() && super.canAttack(target);
+  if(!CombatSafety.valid(this,target) || retreating())return false;
+  return CombatSafety.selfThreat(this,target)
+   || (settings.combat()!=CompanionSettings.Combat.PASSIVE && CombatSafety.ownerThreat(this,target))
+   || (settings.combat()==CompanionSettings.Combat.AGGRESSIVE
+    && (target instanceof net.minecraft.world.entity.monster.Enemy || CombatSafety.ownerSelected(this,target)));
+ }
+ @Override public boolean doHurtTarget(ServerLevel server,Entity target) {
+  if(!(target instanceof LivingEntity living) || !canAttack(living))return false;
+  var weapon=getMainHandItem();boolean hit=super.doHurtTarget(server,target);
+  // Mob's vanilla hit pipeline calls hurtEnemy but omits the player post-hit durability step.
+  if(hit && !weapon.isEmpty())weapon.postHurtEnemy(living,this);
+  return hit;
+ }
+ @Override public boolean hurtServer(ServerLevel server,net.minecraft.world.damagesource.DamageSource source,float amount) {
+  float before=getHealth();boolean hurt=super.hurtServer(server,source,amount);
+  if(hurt)recentDamage=Math.min(30,recentDamage+Math.max(0,before-getHealth()));
+  return hurt;
  }
  @Override public void setTarget(LivingEntity target) {
   if(target!=null && !canAttack(target))return;
@@ -99,36 +124,29 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
  }
  public boolean withinCombatBoundary(LivingEntity target) {
   var player=ownerPlayer();
-  if(mode==Mode.FOLLOW && player!=null)return player.distanceToSqr(target)<=24*24;
+  if(player!=null && (mode==Mode.FOLLOW || CombatSafety.ownerSelected(this,target) || CombatSafety.ownerThreat(this,target)))return player.distanceToSqr(target)<=32*32;
   return combatAnchor==null || target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(combatAnchor))<=16*16;
  }
- boolean tryEmergencyTeleport(boolean stuck) {
-  if(!(level() instanceof ServerLevel server) || mode!=Mode.FOLLOW || !settings.emergencyTeleport()
-    || isPassenger() || isLeashed() || !isAlive() || getTarget()!=null || retreating()
-    || server.getGameTime()<teleportAfter)return false;
-  var player=ownerPlayer();
-  if(player==null || player.isSpectator())return false;
-  double distance=distanceToSqr(player);
-  if(distance<32*32 && !(stuck && distance>12*12))return false;
-  teleportAfter=server.getGameTime()+200;
-  if(!SafeTravel.teleportNear(this,player))return false;
-  activity="Caught up after losing the path";return true;
- }
+ boolean tryEmergencyTeleport(boolean stuck) { return false; } // Compatibility entry point; never moves an actor.
  public void openInventory(Player player) {
   if(ownedBy(player))player.openMenu(new net.minecraft.world.SimpleMenuProvider(
    (id,playerInventory,p)->net.minecraft.world.inventory.ChestMenu.threeRows(id,playerInventory,inventory),getDisplayName()));
  }
  @Override protected void customServerAiStep(ServerLevel server) {
-  if(getHealth()<=6)retreating=true;
-  else if(getHealth()>=12)retreating=false;
+  recentDamage=Math.max(0,recentDamage-0.04F);
+  if(ThreatAssessment.shouldRetreat(this) || getHealth()<=6) { retreating=true;retreatUntil=server.getGameTime()+100; }
+  else if(retreating && server.getGameTime()>=retreatUntil && getHealth()>=10 && ThreatAssessment.score(this)<5)retreating=false;
   super.customServerAiStep(server);inventory.tickSurvival();
-  if(getTarget()!=null && (!canAttack(getTarget()) || distanceToSqr(getTarget())>16*16 || !withinCombatBoundary(getTarget())))setTarget(null);
+  taskLedger.interrupt(retreating(),getTarget()!=null);
+  if(retreating() || getTarget()!=null)workTask.extendForInterruption();
+  if(getTarget()!=null && (!canAttack(getTarget()) || distanceToSqr(getTarget())>combatLeashSquared(getTarget()) || !withinCombatBoundary(getTarget())))setTarget(null);
   if(tickCount%20==0) {
    if(mode==Mode.FOLLOW && ownerPlayer()==null)activity="Waiting for owner in this dimension";
    else if(mode==Mode.HOME && home!=null && distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(home))<=4)activity="At home";
-   else if(mode==Mode.FOLLOW)tryEmergencyTeleport(false);
+
   }
  }
+ @Override public void die(net.minecraft.world.damagesource.DamageSource source){resourceTask.cancel();workTask.cancel();super.die(source);}
  @Override protected void dropCustomDeathLoot(ServerLevel server,net.minecraft.world.damagesource.DamageSource source,boolean recentlyHit) {
   super.dropCustomDeathLoot(server,source,recentlyHit);
   for(int i=0;i<inventory.getContainerSize();i++) {
@@ -136,8 +154,8 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   }
  }
  public boolean ownedBy(Player player) { return owner != null && owner.equals(player.getUUID()); }
- public void claim(Player player) { owner=player.getUUID(); setCustomName(Component.literal("Companion")); setCustomNameVisible(true); }
- public void command(Mode next) { if(next!=Mode.GATHER)resourceTask.cancel(); if(next!=Mode.WORK)workTask.cancel(); mode=next; setTarget(null); getNavigation().stop(); activity=next==Mode.STAY?"Waiting":next==Mode.FOLLOW?"Following":next==Mode.GATHER?"Gathering resources":next==Mode.WORK?"Preparing crafting work":"Returning home"; }
+ public void claim(Player player) { owner=player.getUUID(); setCustomName(Component.literal("MinePal")); setCustomNameVisible(true); }
+ public void command(Mode next) { if(next==Mode.STAY || next==Mode.FOLLOW)taskLedger.state(TaskLedger.Phase.CANCELED,"Canceled by player command"); if(next!=Mode.GATHER)resourceTask.cancel(); if(next!=Mode.WORK)workTask.cancel(); mode=next; setTarget(null); getNavigation().stop(); activity=next==Mode.STAY?"Waiting":next==Mode.FOLLOW?"Following":next==Mode.GATHER?"Gathering resources":next==Mode.WORK?"Preparing crafting work":"Returning home"; }
  public void setHome(BlockPos pos) { home=pos.immutable(); }
  public BlockPos home() { return home; }
  public String status() { return (retreating()?"Retreating/recovering":getTarget()!=null?"Fighting":activity) + "; food " + inventory.hunger() + "/20" + (home==null?"; no home assigned":"; home "+home.toShortString()); }
@@ -155,6 +173,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   super.addAdditionalSaveData(out);
   writeInventoryToTag(out);
   settings.save(out.child("CompanionSettings"));
+  taskLedger.save(out.child("CompanionTaskLedger"));spatialMemory.save(out.child("CompanionSpatialMemory"));
   resourceTask.save(out.child("CompanionResourceTask"));
   workTask.save(out.child("CompanionWorkTask"));
   sharedStorage.save(out.child("CompanionStorage"));
@@ -168,6 +187,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
   super.readAdditionalSaveData(in);
   readInventoryFromTag(in);
   settings.load(in.childOrEmpty("CompanionSettings"));
+  taskLedger.load(in.childOrEmpty("CompanionTaskLedger"));spatialMemory.load(in.childOrEmpty("CompanionSpatialMemory"));
   resourceTask.load(in.childOrEmpty("CompanionResourceTask"));
   workTask.load(in.childOrEmpty("CompanionWorkTask"));
   sharedStorage.load(in.childOrEmpty("CompanionStorage"));
@@ -188,7 +208,7 @@ public class CompanionEntity extends PathfinderMob implements net.minecraft.worl
    if(mode==Mode.HOME && home!=null) return net.minecraft.world.phys.Vec3.atCenterOf(home);
    if(mode==Mode.FOLLOW && owner!=null && level() instanceof ServerLevel server) {
     Player player=server.getPlayerByUUID(owner);
-    if(player!=null && player.isAlive() && distanceToSqr(player)<128*128) return player.position();
+    if(player!=null && player.isAlive()) return player.position();
    }
    return null;
   }
